@@ -1,0 +1,36 @@
+{
+  "data": {
+    "input_path": null,
+    "dataset_name": null,
+    "dataset_names": [],
+    "split": "train",
+    "chunker": null,
+    "codec": null
+  },
+  "model": {
+    "input_dim": 8,
+    "vocab_size": 1024,
+    "num_layers": 32,
+    "llm_d_model": 640,
+    "llm_heads": 10,
+    "llm_layers": 10,
+    "llm_mlp_ratio": 4,
+    "llm_max_seq_len": 2048,
+    "llm_max_audio_tokens": 256,
+    "llm_max_reference_frames": 64,
+    "llm_dropout": 0.1,
+    "audio_tokens_per_text_token": 4,
+    "postnet_model_dim": 640,
+    "postnet_num_steps": 6,
+    "postnet_dropout": 0.0,
+    "multi_chunk_text_strategy": "replace_target_text",
+    "min_chunk_duration_sec": 0.05
+  },
+  "inference": {
+    "output_dir": "./outputs/infer",
+    "checkpoint": null,
+    "seed": 7,
+    "device": "cuda",
+    "max_samples": 0
+  }
+}
