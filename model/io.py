@@ -29,7 +29,10 @@ def load_records(
     if dataset_names:
         datasets = [load_dataset(name, split=split, streaming=streaming) for name in dataset_names]
         return interleave_datasets(datasets)
-    raise ValueError("Either input_path or dataset_name must be provided.")
+    raise ValueError(
+        "Either input_path, dataset_name, or dataset_names must be provided. "
+        "Example dataset_names: ['capleaf/viVoice', 'thivux/phoaudiobook']"
+    )
 
 
 def record_to_stream_sample(record: dict[str, Any]) -> StreamSample:

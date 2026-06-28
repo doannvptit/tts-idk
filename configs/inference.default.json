@@ -2,7 +2,7 @@
   "data": {
     "input_path": null,
     "dataset_name": null,
-    "dataset_names": [],
+    "dataset_names": ["capleaf/viVoice", "thivux/phoaudiobook"],
     "split": "train",
     "chunker": null,
     "codec": null
