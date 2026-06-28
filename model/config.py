@@ -24,6 +24,7 @@ class DataConfig:
 
 @dataclass(slots=True)
 class ModelConfig:
+    tokenizer_path: str = "assets/vi_wikipedia_bbpe_2048_copy.json"
     input_dim: int = 8
     vocab_size: int = 1024
     num_layers: int = 32

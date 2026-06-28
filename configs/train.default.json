@@ -8,6 +8,7 @@
     "codec": null
   },
   "model": {
+    "tokenizer_path": "assets/vi_wikipedia_bbpe_2048_copy.json",
     "input_dim": 8,
     "vocab_size": 1024,
     "num_layers": 32,
