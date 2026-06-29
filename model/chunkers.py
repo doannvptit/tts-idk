@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -28,6 +29,23 @@ def _load_chunkformer_model(model_name: str, device: str) -> ChunkFormerModel:
     return model.to(device)
 
 
+@contextmanager
+def _disable_chunkformer_progress():
+    import chunkformer.chunkformer_model as chunkformer_model
+
+    original_tqdm = chunkformer_model.tqdm
+
+    def quiet_tqdm(*args, **kwargs):
+        kwargs["disable"] = True
+        return original_tqdm(*args, **kwargs)
+
+    chunkformer_model.tqdm = quiet_tqdm
+    try:
+        yield
+    finally:
+        chunkformer_model.tqdm = original_tqdm
+
+
 @dataclass(slots=True)
 class ChunkFormerTimestampChunker:
     model_name: str = "khanhld/chunkformer-ctc-large-vie"
@@ -36,6 +54,7 @@ class ChunkFormerTimestampChunker:
     right_context_size: int = 128
     total_batch_duration: int = 14400
     max_silence_duration: float = 0.5
+    show_progress: bool = False
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
     def chunk(self, sample: StreamSample) -> list[TimestampSpan]:
@@ -48,15 +67,17 @@ class ChunkFormerTimestampChunker:
             )
         try:
             model = _load_chunkformer_model(self.model_name, self.device)
-            transcription = model.endless_decode(
-                audio_path=str(audio_path),
-                chunk_size=self.chunk_size,
-                left_context_size=self.left_context_size,
-                right_context_size=self.right_context_size,
-                total_batch_duration=self.total_batch_duration,
-                return_timestamps=True,
-                max_silence_duration=self.max_silence_duration,
-            )
+            decode_context = nullcontext() if self.show_progress else _disable_chunkformer_progress()
+            with decode_context:
+                transcription = model.endless_decode(
+                    audio_path=str(audio_path),
+                    chunk_size=self.chunk_size,
+                    left_context_size=self.left_context_size,
+                    right_context_size=self.right_context_size,
+                    total_batch_duration=self.total_batch_duration,
+                    return_timestamps=True,
+                    max_silence_duration=self.max_silence_duration,
+                )
         finally:
             if sample.audio_path is None and audio_path.exists():
                 audio_path.unlink(missing_ok=True)
