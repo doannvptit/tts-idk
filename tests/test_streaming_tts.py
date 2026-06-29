@@ -32,7 +32,7 @@ class StreamingTTSPipelineTest(unittest.TestCase):
         self.assertIsNone(result.selected_span)
         self.assertEqual(result.prompt.voice_clone_text, sample.text)
         self.assertEqual(result.prompt.target_text, sample.text)
-        self.assertEqual(result.prompt.voice_clone_reference.continuous_32_layers.shape[1], 32)
+        self.assertEqual(result.prompt.voice_clone_reference.continuous_rvq_layers.shape[1], 16)
 
     def test_multi_chunk_uses_timestamp_text_for_voice_clone_and_target(self) -> None:
         sample = StreamSample(
@@ -52,9 +52,9 @@ class StreamingTTSPipelineTest(unittest.TestCase):
         self.assertIsNotNone(result.selected_span)
         self.assertEqual(result.prompt.voice_clone_text, result.selected_span.text)
         self.assertEqual(result.prompt.target_text, result.selected_span.text)
-        self.assertEqual(result.prompt.voice_clone_reference.continuous_32_layers.shape[1], 32)
+        self.assertEqual(result.prompt.voice_clone_reference.continuous_rvq_layers.shape[1], 16)
         self.assertLess(
-            result.prompt.voice_clone_reference.continuous_32_layers.shape[0],
+            result.prompt.voice_clone_reference.continuous_rvq_layers.shape[0],
             int(sample.metadata["duration_sec"] * 12.5),
         )
 

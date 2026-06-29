@@ -96,17 +96,24 @@ def main() -> None:
             if not target_sample.audio_path:
                 continue
 
-            prompt, chunk_mode, selected_span, _ = pipeline.prepare_prompt(sample)
-            target_codec = codec.encode(target_sample)
-            target_layer0_codes = target_codec.discrete_codes[:, 0].long().to(app_config.train.device)
-            target_sequence = layer0_generator.build_target_sequence(target_layer0_codes)
-            target_layer0_embeddings = target_codec.continuous_embeddings[:, 0, :].float().to(app_config.train.device)
-            target_acoustic = target_codec.continuous_embeddings.float().to(app_config.train.device)
+            training_example = pipeline.prepare_training_example(sample)
+            target_sequence = layer0_generator.build_training_sequence(
+                [(chunk.text, chunk.layer0_codes) for chunk in training_example.chunks]
+            )
+            target_layer0_embeddings = torch.cat(
+                [chunk.layer0_embeddings for chunk in training_example.chunks],
+                dim=0,
+            ).float().to(app_config.train.device)
+            target_acoustic = torch.cat(
+                [chunk.continuous_rvq_layers for chunk in training_example.chunks],
+                dim=0,
+            ).float().to(app_config.train.device)
 
-            pred_logits, pred_hidden = layer0_generator.forward_train(prompt, target_sequence)
-            aligned_count = min(pred_logits.shape[0], target_sequence.shape[0])
-            code_loss = F.cross_entropy(pred_logits[:aligned_count], target_sequence[:aligned_count])
-            acoustic_pred = rvq_projector(pred_hidden, target_layer0_embeddings)
+            train_output = layer0_generator.forward_train(training_example.prompt, target_sequence)
+            target_labels = target_sequence[1:].to(app_config.train.device)
+            aligned_count = min(train_output.logits.shape[0], target_labels.shape[0])
+            code_loss = F.cross_entropy(train_output.logits[:aligned_count], target_labels[:aligned_count])
+            acoustic_pred = rvq_projector(train_output.audio_hidden_states, target_layer0_embeddings)
             acoustic_count = min(acoustic_pred.shape[0], target_acoustic.shape[0])
             acoustic_target = target_acoustic[:acoustic_count]
             acoustic_l1 = F.smooth_l1_loss(acoustic_pred, acoustic_target)
@@ -142,8 +149,13 @@ def main() -> None:
             metric = {
                 "step": step,
                 "sample_id": sample.sample_id,
-                "chunk_mode": chunk_mode,
-                "selected_text": selected_span.text if selected_span else sample.ref_text or sample.text,
+                "chunk_mode": training_example.chunk_mode,
+                "selected_text": (
+                    training_example.selected_span.text
+                    if training_example.selected_span
+                    else sample.ref_text or sample.text
+                ),
+                "num_chunks": len(training_example.chunks),
                 "code_loss": float(code_loss.detach().cpu()),
                 "acoustic_l1": float(acoustic_l1.detach().cpu()),
                 "acoustic_cosine": float(acoustic_cosine.detach().cpu()),

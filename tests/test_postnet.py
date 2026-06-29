@@ -15,7 +15,7 @@ class ResidualPostNetTest(unittest.TestCase):
                 llm_hidden_dim=16,
                 output_dim=8,
                 model_dim=32,
-                num_layers=32,
+                num_layers=16,
                 num_steps=4,
             )
         )
@@ -24,7 +24,7 @@ class ResidualPostNetTest(unittest.TestCase):
 
         output = postnet(layer0, hidden)
 
-        self.assertEqual(output.shape, (20, 32, 8))
+        self.assertEqual(output.shape, (20, 16, 8))
 
     def test_postnet_aligns_mismatched_sequence_lengths(self) -> None:
         postnet = ResidualPostNet(
