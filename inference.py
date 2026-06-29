@@ -69,9 +69,9 @@ def main() -> None:
         sample_dir = output_dir / sample.sample_id.replace("/", "_")
         sample_dir.mkdir(parents=True, exist_ok=True)
         phase1_path = sample_dir / "layer0_codes.pt"
-        phase2_path = sample_dir / "continuous_32_layers.pt"
+        phase2_path = sample_dir / "continuous_rvq_layers.pt"
         torch.save(torch.as_tensor(result.phase1.layer0_codes, dtype=torch.long), phase1_path)
-        torch.save(result.phase2.continuous_32_layers.detach().cpu(), phase2_path)
+        torch.save(result.phase2.continuous_rvq_layers.detach().cpu(), phase2_path)
 
         manifest = {
             "sample_id": sample.sample_id,
@@ -89,7 +89,7 @@ def main() -> None:
             ),
             "phase1_path": str(phase1_path),
             "phase2_path": str(phase2_path),
-            "phase2_shape": list(result.phase2.continuous_32_layers.shape),
+            "phase2_shape": list(result.phase2.continuous_rvq_layers.shape),
         }
         append_jsonl(manifest_path, manifest)
         print(json.dumps(manifest, ensure_ascii=False))
