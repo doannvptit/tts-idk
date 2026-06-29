@@ -28,14 +28,14 @@ Default audio tokenizer:
 - `frame_rate_hz = 12.5`
 - `num_layers = 16`
 - `audio_codebook_size = 1024`
-- text vocab occupies ids `[0, 2047]`
-- layer-0 audio ids are offset by `audio_token_offset = 2048`
+- tokenizer vocab has 2048 ids total
+- layer-0 audio codes map to existing `[audio_token_0]` ... `[audio_token_1023]` ids
 
 LLM training sequence:
 
 ```text
 <VOICE_CLONE> clone text tokens + clone continuous RVQ embeddings </VOICE_CLONE>
-<BOS> text chunk <AUDIO> layer-0 audio ids + offset </AUDIO> ... <EOS>
+<BOS> text chunk <AUDIO> layer-0 audio token ids </AUDIO> ... <EOS>
 ```
 
 ## Run
