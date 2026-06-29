@@ -48,7 +48,7 @@ class BaselineLayer0Generator(nn.Module, Layer0GeneratorProtocol):
         return codes, hidden_states, logits
 
     def infer_layer0(self, prompt: Phase1Prompt) -> Phase1Result:
-        reference_continuous = prompt.voice_clone_reference.continuous_32_layers[:, 0, :]
+        reference_continuous = prompt.voice_clone_reference.continuous_rvq_layers[:, 0, :]
         codes, hidden_states, _ = self.forward(reference_continuous)
         return Phase1Result(
             layer0_codes=codes.tolist(),
@@ -74,7 +74,7 @@ class BaselineRVQProjector(nn.Module, RVQProjectorProtocol):
         self,
         hidden_dim: int = 64,
         continuous_dim: int = 8,
-        num_layers: int = 32,
+        num_layers: int = 16,
         postnet_config: ResidualPostNetConfig | None = None,
     ) -> None:
         super().__init__()
@@ -101,7 +101,7 @@ class BaselineRVQProjector(nn.Module, RVQProjectorProtocol):
 
     def project_to_full_rvq(self, layer0_hidden_states: torch.Tensor, layer0_continuous: torch.Tensor) -> Phase2Result:
         return Phase2Result(
-            continuous_32_layers=self.forward(layer0_hidden_states, layer0_continuous),
+            continuous_rvq_layers=self.forward(layer0_hidden_states, layer0_continuous),
             metadata={"num_layers": self.num_layers},
         )
 
@@ -112,7 +112,7 @@ class BaselineBundle:
     rvq_projector: BaselineRVQProjector
 
 
-def build_baseline_bundle(input_dim: int = 8, hidden_dim: int = 64, vocab_size: int = 1024, num_layers: int = 32) -> BaselineBundle:
+def build_baseline_bundle(input_dim: int = 8, hidden_dim: int = 64, vocab_size: int = 1024, num_layers: int = 16) -> BaselineBundle:
     return BaselineBundle(
         layer0_generator=BaselineLayer0Generator(
             input_dim=input_dim,
