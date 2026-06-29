@@ -32,10 +32,10 @@
     "min_chunk_duration_sec": 0.05
   },
   "train": {
-    "output_dir": "./outputs/train",
+    "output_dir": "./.checkpoints/train",
     "max_steps": 100,
     "log_every": 10,
-    "save_every": 50,
+    "save_every": 1000,
     "learning_rate": 0.001,
     "postnet_learning_rate": 0.0005,
     "code_loss_weight": 1.0,
