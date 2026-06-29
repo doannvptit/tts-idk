@@ -3,11 +3,15 @@ name = "lumivoice"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "chunkformer>=1.2.2",
     "datasets>=5.0.0",
     "ipykernel>=7.3.0",
+    "soundfile>=0.13.1",
+    "tokenizers>=0.22.0",
+    "torchaudio>=2.0.0",
+    "transformers>=4.56.0",
     "torchcodec>=0.14.0",
     "wrapt>=2.2.2",
 ]
