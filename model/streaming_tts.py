@@ -27,6 +27,24 @@ class PipelineConfig:
     min_chunk_duration_sec: float = 0.05
 
 
+@dataclass(slots=True)
+class TrainingChunk:
+    text: str
+    span: TimestampSpan
+    layer0_codes: object
+    layer0_embeddings: object
+    continuous_rvq_layers: object
+
+
+@dataclass(slots=True)
+class TrainingExample:
+    prompt: Phase1Prompt
+    chunks: list[TrainingChunk]
+    codec_features: CodecFeatures
+    chunk_mode: str
+    selected_span: TimestampSpan | None
+
+
 class TimestampPassthroughChunker:
     """Uses timestamps already attached to the streamed sample."""
 
@@ -91,11 +109,42 @@ class RealtimeChunkedTTSPipeline:
             voice_clone_reference=VoiceCloneReference(
                 text=voice_clone_text,
                 timestamps=reference_spans,
-                continuous_32_layers=reference_features.continuous_embeddings,
+                continuous_rvq_layers=reference_features.continuous_embeddings,
                 source_sample_id=sample.sample_id,
             ),
         )
         return prompt, chunk_mode, selected_span, codec_features
+
+    def prepare_training_example(self, sample: StreamSample) -> TrainingExample:
+        prompt, chunk_mode, selected_span, codec_features = self.prepare_prompt(sample)
+        spans = self._normalize_spans(self.chunker.chunk(sample))
+        if not spans:
+            spans = [
+                TimestampSpan(
+                    start_sec=0.0,
+                    end_sec=self._infer_duration_sec(codec_features),
+                    text=sample.text,
+                )
+            ]
+        chunks: list[TrainingChunk] = []
+        for span in spans:
+            features = codec_features.slice_by_span(span)
+            chunks.append(
+                TrainingChunk(
+                    text=span.text,
+                    span=span,
+                    layer0_codes=features.discrete_codes[:, 0].long(),
+                    layer0_embeddings=features.continuous_embeddings[:, 0, :].float(),
+                    continuous_rvq_layers=features.continuous_embeddings.float(),
+                )
+            )
+        return TrainingExample(
+            prompt=prompt,
+            chunks=chunks,
+            codec_features=codec_features,
+            chunk_mode=chunk_mode,
+            selected_span=selected_span,
+        )
 
     def process_sample(self, sample: StreamSample) -> InferenceExample:
         prompt, chunk_mode, selected_span, codec_features = self.prepare_prompt(sample)
