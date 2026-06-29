@@ -47,7 +47,14 @@ class TTSLossModule(nn.Module):
         train_output = self.layer0_generator.forward_train(prompt, target_sequence)
         target_labels = target_sequence[1:].to(train_output.logits.device)
         aligned_count = min(train_output.logits.shape[0], target_labels.shape[0])
-        code_loss = F.cross_entropy(train_output.logits[:aligned_count], target_labels[:aligned_count])
+        code_loss_mask = train_output.code_loss_mask[:aligned_count]
+        if code_loss_mask.any():
+            code_loss = F.cross_entropy(
+                train_output.logits[:aligned_count][code_loss_mask],
+                target_labels[:aligned_count][code_loss_mask],
+            )
+        else:
+            code_loss = train_output.logits[:aligned_count].sum() * 0.0
 
         acoustic_pred = self.rvq_projector(train_output.audio_hidden_states, target_layer0_embeddings)
         acoustic_count = min(acoustic_pred.shape[0], target_acoustic.shape[0])

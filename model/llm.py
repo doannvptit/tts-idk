@@ -30,6 +30,7 @@ class GPTTrainOutput:
     hidden_states: torch.Tensor
     audio_hidden_states: torch.Tensor
     audio_target_ids: torch.Tensor
+    code_loss_mask: torch.Tensor
 
 
 @dataclass(slots=True)
@@ -97,11 +98,13 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
         target_hidden = selected_hidden[:, -input_token_ids.shape[0] :, :].squeeze(0)
         logits = self.code_head(final_hidden[:, -input_token_ids.shape[0] :, :]).squeeze(0)
         audio_mask = self.is_audio_token(label_token_ids)
+        code_loss_mask = self.is_code_loss_target(label_token_ids)
         return GPTTrainOutput(
             logits=logits,
             hidden_states=target_hidden,
             audio_hidden_states=target_hidden[audio_mask],
             audio_target_ids=label_token_ids[audio_mask],
+            code_loss_mask=code_loss_mask,
         )
 
     def infer_layer0(self, prompt: Phase1Prompt) -> Phase1Result:
@@ -143,7 +146,12 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
             next_hidden = selected_hidden[:, -1, :]
             logits = self.code_head(final_hidden[:, -1, :]).squeeze(0)
             audio_logits = logits[self.config.audio_token_offset : self.config.audio_token_offset + self.config.audio_codebook_size]
-            next_code = int(audio_logits.argmax(dim=-1).item())
+            stop_logit = logits[self.audio_end_id].unsqueeze(0)
+            next_token = int(torch.cat([audio_logits, stop_logit], dim=0).argmax(dim=-1).item())
+            if next_token == self.config.audio_codebook_size:
+                reached_eos = True
+                break
+            next_code = next_token
             generated.append(next_code)
             hidden_states.append(next_hidden.squeeze(0))
 
@@ -185,6 +193,10 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
             (token_ids >= self.config.audio_token_offset)
             & (token_ids < self.config.audio_token_offset + self.config.audio_codebook_size)
         )
+
+    def is_code_loss_target(self, token_ids: torch.Tensor) -> torch.Tensor:
+        token_ids = token_ids.to(self.device)
+        return self.is_audio_token(token_ids) | (token_ids == self.audio_end_id)
 
     def encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text).ids
