@@ -12,7 +12,7 @@
     "input_dim": 8,
     "text_vocab_size": 2048,
     "audio_codebook_size": 1024,
-    "audio_token_offset": 2048,
+    "audio_token_offset": 7,
     "vocab_size": 1024,
     "num_layers": 16,
     "llm_d_model": 640,

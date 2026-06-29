@@ -38,7 +38,7 @@ class GPTPhase1Config:
     tokenizer_path: str = "assets/vi_wikipedia_bbpe_2048_copy.json"
     text_vocab_size: int = 2048
     audio_codebook_size: int = 1024
-    audio_token_offset: int = 2048
+    audio_token_offset: int = 7
     max_seq_len: int = 2048
     max_audio_tokens: int = 256
     d_model: int = 640
@@ -54,7 +54,7 @@ class GPTPhase1Config:
 
     @property
     def total_vocab_size(self) -> int:
-        return self.text_vocab_size + self.audio_codebook_size
+        return self.text_vocab_size
 
 
 class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
@@ -68,7 +68,16 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
         self.audio_end_id = self._required_token_id("</AUDIO>")
         self.voice_clone_start_id = self._required_token_id("<VOICE_CLONE>")
         self.voice_clone_end_id = self._required_token_id("</VOICE_CLONE>")
-        self.token_embedding = nn.Embedding(config.total_vocab_size, config.d_model)
+        self.vocab_size = self.tokenizer.get_vocab_size()
+        audio_token_ids = [self._required_token_id(f"[audio_token_{index}]") for index in range(config.audio_codebook_size)]
+        token_id_to_audio_code = torch.full((self.vocab_size,), -1, dtype=torch.long)
+        token_id_to_audio_code[torch.tensor(audio_token_ids, dtype=torch.long)] = torch.arange(
+            config.audio_codebook_size,
+            dtype=torch.long,
+        )
+        self.register_buffer("audio_token_ids", torch.tensor(audio_token_ids, dtype=torch.long), persistent=False)
+        self.register_buffer("token_id_to_audio_code", token_id_to_audio_code, persistent=False)
+        self.token_embedding = nn.Embedding(self.vocab_size, config.d_model)
         self.position_embedding = LearnedPositionalEmbedding(config.max_seq_len, config.d_model)
         self.reference_projection = nn.Linear(config.reference_dim * config.num_audio_layers, config.d_model)
         self.blocks = nn.ModuleList(
@@ -83,17 +92,20 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
             ]
         )
         self.final_ln = nn.LayerNorm(config.d_model)
-        self.code_head = nn.Linear(config.d_model, config.total_vocab_size)
+        self.code_head = nn.Linear(config.d_model, self.vocab_size)
 
     def forward_train(self, prompt: Phase1Prompt, target_token_ids: torch.Tensor) -> GPTTrainOutput:
         condition = self._build_condition_embeddings(prompt).unsqueeze(0)
-        target_token_ids = target_token_ids.to(self.device)[: self.config.max_audio_tokens]
+        target_token_ids = target_token_ids.to(self.device)
         input_token_ids = target_token_ids[:-1]
         label_token_ids = target_token_ids[1:]
         token_embeddings = self.token_embedding(input_token_ids).unsqueeze(0)
         x = torch.cat([condition, token_embeddings], dim=1)
         if x.shape[1] > self.config.max_seq_len:
-            x = x[:, -self.config.max_seq_len :]
+            raise ValueError(
+                f"Training sequence length {x.shape[1]} exceeds llm_max_seq_len={self.config.max_seq_len}. "
+                "Increase llm_max_seq_len or split the sample into shorter chunks; audio tokens are not truncated."
+            )
         final_hidden, selected_hidden = self._run_transformer(x)
         target_hidden = selected_hidden[:, -input_token_ids.shape[0] :, :].squeeze(0)
         logits = self.code_head(final_hidden[:, -input_token_ids.shape[0] :, :]).squeeze(0)
@@ -141,11 +153,14 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
             else:
                 x = torch.cat([condition, prefix_embeddings], dim=1)
             if x.shape[1] > self.config.max_seq_len:
-                x = x[:, -self.config.max_seq_len :]
+                raise ValueError(
+                    f"Generation sequence length {x.shape[1]} exceeds llm_max_seq_len={self.config.max_seq_len}. "
+                    "Increase llm_max_seq_len or reduce max_audio_tokens; audio tokens are not truncated."
+                )
             final_hidden, selected_hidden = self._run_transformer(x)
             next_hidden = selected_hidden[:, -1, :]
             logits = self.code_head(final_hidden[:, -1, :]).squeeze(0)
-            audio_logits = logits[self.config.audio_token_offset : self.config.audio_token_offset + self.config.audio_codebook_size]
+            audio_logits = logits.index_select(0, self.audio_token_ids)
             stop_logit = logits[self.audio_end_id].unsqueeze(0)
             next_token = int(torch.cat([audio_logits, stop_logit], dim=0).argmax(dim=-1).item())
             if next_token == self.config.audio_codebook_size:
@@ -182,21 +197,39 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
         return torch.tensor(token_ids, dtype=torch.long, device=self.device)
 
     def audio_codes_to_token_ids(self, codes: torch.Tensor) -> torch.Tensor:
-        return codes.long().to(self.device) + self.config.audio_token_offset
+        codes = codes.long().to(self.device)
+        return self.audio_token_ids.index_select(0, codes)
 
     def token_ids_to_audio_codes(self, token_ids: torch.Tensor) -> torch.Tensor:
-        return token_ids.long() - self.config.audio_token_offset
+        token_ids = token_ids.long().to(self.device)
+        return self.token_id_to_audio_code.index_select(0, token_ids)
 
     def is_audio_token(self, token_ids: torch.Tensor) -> torch.Tensor:
-        token_ids = token_ids.to(self.device)
-        return (
-            (token_ids >= self.config.audio_token_offset)
-            & (token_ids < self.config.audio_token_offset + self.config.audio_codebook_size)
-        )
+        token_ids = token_ids.long().to(self.device)
+        return self.token_id_to_audio_code.index_select(0, token_ids) >= 0
 
     def is_code_loss_target(self, token_ids: torch.Tensor) -> torch.Tensor:
         token_ids = token_ids.to(self.device)
         return self.is_audio_token(token_ids) | (token_ids == self.audio_end_id)
+
+    def build_code_loss_inputs(
+        self,
+        logits: torch.Tensor,
+        label_token_ids: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        label_token_ids = label_token_ids.to(logits.device)
+        mask = self.is_code_loss_target(label_token_ids)
+        selected_logits = logits[mask]
+        selected_labels = label_token_ids[mask]
+        audio_logits = selected_logits.index_select(1, self.audio_token_ids.to(logits.device))
+        stop_logits = selected_logits[:, self.audio_end_id : self.audio_end_id + 1]
+        restricted_logits = torch.cat([audio_logits, stop_logits], dim=-1)
+        restricted_labels = torch.where(
+            self.is_audio_token(selected_labels),
+            self.token_ids_to_audio_codes(selected_labels),
+            torch.full_like(selected_labels, self.config.audio_codebook_size),
+        )
+        return restricted_logits, restricted_labels
 
     def encode_text(self, text: str) -> list[int]:
         return self.tokenizer.encode(text).ids
@@ -266,7 +299,6 @@ class GPTPhase1Model(nn.Module, Layer0GeneratorProtocol):
 
     def build_target_sequence(self, target_codes: torch.Tensor) -> torch.Tensor:
         target_codes = target_codes.to(self.device)
-        target_codes = target_codes[: self.config.max_audio_tokens - 3]
         return torch.cat(
             [
                 torch.tensor([self.bos_id, self.audio_start_id], dtype=torch.long, device=self.device),

@@ -28,7 +28,7 @@ class ModelConfig:
     input_dim: int = 8
     text_vocab_size: int = 2048
     audio_codebook_size: int = 1024
-    audio_token_offset: int = 2048
+    audio_token_offset: int = 7
     vocab_size: int = 1024
     num_layers: int = 16
     llm_d_model: int = 640
