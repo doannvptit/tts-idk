@@ -5,13 +5,16 @@
     "dataset_names": ["capleaf/viVoice", "thivux/phoaudiobook"],
     "split": "train",
     "chunker": null,
-    "codec": null
+    "codec": "model.components.moss:MossAudioTokenizerCodec"
   },
   "model": {
     "tokenizer_path": "assets/vi_wikipedia_bbpe_2048_copy.json",
     "input_dim": 8,
+    "text_vocab_size": 2048,
+    "audio_codebook_size": 1024,
+    "audio_token_offset": 2048,
     "vocab_size": 1024,
-    "num_layers": 32,
+    "num_layers": 16,
     "llm_d_model": 640,
     "llm_heads": 10,
     "llm_layers": 10,
@@ -21,6 +24,7 @@
     "llm_max_reference_frames": 64,
     "llm_dropout": 0.1,
     "audio_tokens_per_text_token": 4,
+    "postnet_hidden_layers": [2, 4, 6, 8, 10],
     "postnet_model_dim": 640,
     "postnet_num_steps": 6,
     "postnet_dropout": 0.0,

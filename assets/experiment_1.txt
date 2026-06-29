@@ -1,0 +1,67 @@
+Cách chạy
+
+  .venv/bin/python -m torch.distributed.run --nproc_per_node=2 train_ddp.py \
+    --config configs/train.default.json \
+    --max-steps 10 \
+    --output-dir ./outputs/train_ddp \
+    --chunker model.chunkers:ChunkFormerTimestampChunker \
+    --profile-every 1 \
+    --skip-python-finalizers
+
+  --skip-python-finalizers dùng để tránh lỗi shutdown PyGILState_Release từ stack HF streaming/audio sau khi checkpoint đã ghi xong.
+
+  train_ddp.py Làm Gì
+
+  - Dùng 2 GPU với DistributedDataParallel.
+  - Shard streaming dataset theo rank: record i chạy ở rank i % world_size.
+  - Khởi tạo MOSS/ChunkFormer trên đúng cuda:{local_rank}.
+  - Đo timing các pha:
+      - stream_next: lấy record từ HF streaming iterator
+      - record_to_sample: convert record sang StreamSample
+      - preprocess_chunk_moss: ChunkFormer timestamp + MOSS tokenizer + align chunk
+      - build_batch: build text/audio sequence
+      - forward_backward: forward + backward DDP
+      - optimizer_step: optimizer update
+
+  - Rank 0 ghi train_ddp_metrics.jsonl và checkpoint.
+
+  Kết Quả Benchmark 2 GPU
+  Môi trường: 2 x Tesla T4, world_size=2.
+
+  MOSS + ChunkFormer, max_steps=2, HF streaming thật:
+
+  - Tổng: 20.36s cho 4 global samples
+  - Trung bình end-to-end: 5.09s / global sample
+  - Step đầu bị ảnh hưởng bởi HF stream/cache/lazy load ChunkFormer.
+  - Delta step 2 sau warmup, core timing:
+      - preprocess_chunk_moss: ~0.371s, khoảng 49.0%
+      - forward_backward: ~0.321s, khoảng 42.4%
+      - optimizer_step: ~0.032s, khoảng 4.2%
+      - stream_next: ~0.032s, khoảng 4.2%
+
+  MOSS-only, không ChunkFormer:
+
+  - Tổng: 10.76s cho 4 global samples
+  - Trung bình end-to-end: 2.69s / global sample
+  - Delta step 2 sau warmup:
+      - preprocess_chunk_moss tức chủ yếu MOSS tokenizer: ~0.124s, khoảng 33.8%
+      - forward_backward: ~0.186s, khoảng 50.7%
+      - stream_next: ~0.028s, khoảng 7.8%
+      - optimizer_step: ~0.025s, khoảng 6.8%
+
+  Kết Luận Bottleneck
+
+  - Khi chạy đủ ChunkFormer + MOSS, bottleneck chính là preprocess, đặc biệt ChunkFormer.
+  - MOSS tokenizer riêng đã đáng kể, nhưng ChunkFormer làm preprocess tăng thêm khoảng ~0.25s/sample/rank trên mẫu benchmark ngắn này.
+  - HF streaming không phải bottleneck steady-state trong run này, nhưng step đầu tốn lớn do cache/fetch/decode ban đầu.
+  - DDP 2 GPU giúp phần model training, nhưng không tự giải quyết preprocess nếu ChunkFormer/MOSS vẫn chạy inline từng sample.
+
+  Đã Verify
+
+  - train_ddp.py compile pass.
+  - Unit tests pass: 7 tests OK.
+  - DDP smoke 2 GPU pass với mock codec.
+  - DDP benchmark thật chạy được với MOSS + ChunkFormer và ghi checkpoint tại /tmp/tts_ddp_real_bench_stream/last.pt.
+
+  Bước kỹ thuật hợp lý tiếp theo là tách preprocess ChunkFormer+MOSS ra offline/cache artifact, rồi train_ddp.py chỉ đọc token/chunk đã materialize. Khi đó 2 GPU sẽ dùng phần
+  lớn thời gian cho model thay vì chờ preprocess.
