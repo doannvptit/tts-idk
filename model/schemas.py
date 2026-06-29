@@ -31,8 +31,12 @@ class StreamSample:
 class VoiceCloneReference:
     text: str
     timestamps: list[TimestampSpan]
-    continuous_32_layers: Any
+    continuous_rvq_layers: Any
     source_sample_id: str
+
+    @property
+    def continuous_32_layers(self) -> Any:
+        return self.continuous_rvq_layers
 
 
 @dataclass(slots=True)
@@ -51,8 +55,12 @@ class Phase1Result:
 
 @dataclass(slots=True)
 class Phase2Result:
-    continuous_32_layers: Any
+    continuous_rvq_layers: Any
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def continuous_32_layers(self) -> Any:
+        return self.continuous_rvq_layers
 
 
 @dataclass(slots=True)

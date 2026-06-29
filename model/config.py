@@ -26,8 +26,11 @@ class DataConfig:
 class ModelConfig:
     tokenizer_path: str = "assets/vi_wikipedia_bbpe_2048_copy.json"
     input_dim: int = 8
+    text_vocab_size: int = 2048
+    audio_codebook_size: int = 1024
+    audio_token_offset: int = 2048
     vocab_size: int = 1024
-    num_layers: int = 32
+    num_layers: int = 16
     llm_d_model: int = 640
     llm_heads: int = 10
     llm_layers: int = 10
@@ -37,6 +40,7 @@ class ModelConfig:
     llm_max_reference_frames: int = 64
     llm_dropout: float = 0.1
     audio_tokens_per_text_token: int = 4
+    postnet_hidden_layers: list[int] = field(default_factory=lambda: [2, 4, 6, 8, 10])
     postnet_model_dim: int = 640
     postnet_num_steps: int = 6
     postnet_dropout: float = 0.0
@@ -45,8 +49,10 @@ class ModelConfig:
 
     def build_llm_config(self) -> GPTPhase1Config:
         return GPTPhase1Config(
-            text_vocab_size=260,
-            audio_vocab_size=self.vocab_size,
+            tokenizer_path=self.tokenizer_path,
+            text_vocab_size=self.text_vocab_size,
+            audio_codebook_size=self.audio_codebook_size,
+            audio_token_offset=self.audio_token_offset,
             max_seq_len=self.llm_max_seq_len,
             max_audio_tokens=self.llm_max_audio_tokens,
             d_model=self.llm_d_model,
@@ -55,14 +61,19 @@ class ModelConfig:
             mlp_ratio=self.llm_mlp_ratio,
             dropout=self.llm_dropout,
             reference_dim=self.input_dim,
+            num_audio_layers=self.num_layers,
             max_reference_frames=self.llm_max_reference_frames,
             audio_tokens_per_text_token=self.audio_tokens_per_text_token,
+            postnet_hidden_layers=self.postnet_hidden_layers,
         )
 
     def build_postnet_config(self) -> ResidualPostNetConfig:
+        active_hidden_layers = [
+            layer for layer in self.postnet_hidden_layers if 1 <= layer <= self.llm_layers
+        ] or [self.llm_layers]
         return ResidualPostNetConfig(
             layer0_dim=self.input_dim,
-            llm_hidden_dim=self.llm_d_model,
+            llm_hidden_dim=self.llm_d_model * len(active_hidden_layers),
             output_dim=self.input_dim,
             model_dim=self.postnet_model_dim,
             num_layers=self.num_layers,
