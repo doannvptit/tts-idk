@@ -12,7 +12,7 @@ class ResidualPostNetConfig:
     llm_hidden_dim: int
     output_dim: int
     model_dim: int
-    num_layers: int = 32
+    num_layers: int = 16
     num_steps: int = 6
     dropout: float = 0.0
 
